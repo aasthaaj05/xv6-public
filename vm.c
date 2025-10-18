@@ -6,6 +6,7 @@
 #include "mmu.h"
 #include "proc.h"
 #include "elf.h"
+#include "shm.h"
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
@@ -212,6 +213,57 @@ loaduvm(pde_t *pgdir, char *addr, struct inode *ip, uint offset, uint sz)
       n = PGSIZE;
     if(readi(ip, P2V(pa), offset+i, n) != n)
       return -1;
+  }
+  return 0;
+}
+
+/* 
+(**pages) is pointer to array of pointers to pages allocated for shared memory 
+to keep track of all the physical pages belonging to one shared memory segment
+*/
+
+//allocate physical pages for shared memory
+//returns 0 on success, -1 on failure
+int
+allocshm(uint size, char **pages)
+{
+  char *mem;
+  uint npages=PGROUNDUP(size)/PGSIZE;
+  uint i;
+
+  if(size==0||size>=KERNBASE) return -1;
+
+  for(i=0; i<npages; i++){
+    mem=kalloc();
+    if(mem==0){
+      cprintf("out of memory\n");
+      //on failure, free pages allocated earlier
+      for(uint j=0; j<i; j++){
+        kfree(pages[j]);
+        pages[j]=0; //avoid dangling pointer
+      }
+      return -1;
+    }
+    memset(mem, 0, PGSIZE);
+    pages[i]=mem;
+  }
+  return 0;
+}
+
+//deallocate physical pages for shared memory
+int
+deallocshm(char **pages, uint size)
+{
+  uint npages=PGROUNDUP(size)/PGSIZE;
+  uint i;
+
+  if(pages==0) return -1;
+
+  for(i=0; i<npages; i++){
+    if(pages[i]){
+      kfree(pages[i]);
+      pages[i]=0; 
+    }
   }
   return 0;
 }
