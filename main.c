@@ -5,6 +5,8 @@
 #include "mmu.h"
 #include "proc.h"
 #include "x86.h"
+#include "shm.h"
+
 
 static void startothers(void);
 static void mpmain(void)  __attribute__((noreturn));
@@ -29,6 +31,8 @@ main(void)
   pinit();         // process table
   tvinit();        // trap vectors
   binit();         // buffer cache
+  shminit();
+  cprintf("Shared memory table is initialized\n");
   fileinit();      // file table
   ideinit();       // disk 
   startothers();   // start other processors
