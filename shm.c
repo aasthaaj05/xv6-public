@@ -1,7 +1,10 @@
 #include "types.h"     
 #include "defs.h"     
 #include "param.h"     
+#include "mmu.h"
 #include "memlayout.h" 
+#include "proc.h"
+#include "spinlock.h"
 #include "shm.h"
 
 
@@ -20,53 +23,103 @@ struct shmseg{
 
 */
 
-// global shared memory table
-struct shmseg shmtable[MAXSHM];
+// global shared memory table with lock
+struct {
+    struct spinlock lock;
+    struct shmseg segments[MAXSHM];
+} shmtable;
 
 
-void shminit(void){
+void
+shminit(void)
+{
+    initlock(&shmtable.lock, "shmtable");
+    
     for(int i = 0; i < MAXSHM; i++){
-        shmtable[i].used = 0;
-        shmtable[i].key = 0;
-        shmtable[i].id = 0;
-        shmtable[i].size = 0;
-        shmtable[i].nattch = 0;
+        shmtable.segments[i].used = 0;
+        shmtable.segments[i].key = 0;
+        shmtable.segments[i].id = i;
+        shmtable.segments[i].size = 0;
+        shmtable.segments[i].nattch = 0;
         for(int j = 0; j < MAX_PAGES; j++){
-        
-            shmtable[i].pages[j] = 0;
-            }
+            shmtable.segments[i].pages[j] = 0;
+        }
     }
 }
 
-int shmget(int key, int size){
+/*
+sys_shmget:
+1. acquire lock
+2. check if segment with given key exists
+3. if exists, return its id
+4. error if IPC_CREAT or IPC_EXCL flags are set and segment exists
+5. if size requested is less than SHMMIN or greater than SHMMAX, return error
+6. IPC_CREAT flag set, find a free slot in shmtable
+7. for non-existing segment, initialize its fields
+8. allocate physical pages for the segment. store pointers in pages array
+9. initilialize shared memory metadata
+10. release lock
+11. return segment id or error code
+*/
+
+int
+sys_shmget(void)
+{
+    int key, size, shmflg;
     int i;
+    
+    if(argint(0, &key)<0 || argint(1, &size)<0 || argint(2, &shmflg)<0)
+        return -1;
 
-     /* first we wil check for segment and if its there then we return that */
-    for (i = 0; i < MAXSHM; i++) {
-        if(shmtable[i].used && shmtable[i].key == key){
-           
-            return shmtable[i].id;
-          }
-       }
+    if(size < SHMMIN || size > SHMMAX)
+        return -1;
+    
+    acquire(&shmtable.lock);
 
-    //if not then we just allocate with the arguments provided
-    for (i = 0; i < MAXSHM; i++){
-        if (!shmtable[i].used) {
-            
-        shmtable[i].used = 1;
-        shmtable[i].key = key;
-        shmtable[i].id = i;     // could use a global counter for unique but for not it local 
-        shmtable[i].size = size;
-        shmtable[i].nattch = 0;
-
-            //have to figure out pages part
-            
-             cprintf("key=%d, index=%d, id=%d\n", key, i, shmtable[i].id);
-            return shmtable[i].id;
+    //check for existing segment
+    if(key != IPC_PRIVATE) {
+        for(i = 0; i < MAXSHM; i++) {
+            if(shmtable.segments[i].used && shmtable.segments[i].key == key) {
+                if((shmflg & IPC_CREAT) && (shmflg & IPC_EXCL)) {
+                    release(&shmtable.lock);
+                    return -1; 
+                }
+                int id = shmtable.segments[i].id;
+                release(&shmtable.lock);
+                return id;
+            }
+        }
+        
+        //segment not found, check if IPC_CREAT is set
+        if(!(shmflg & IPC_CREAT)) {
+            release(&shmtable.lock);
+            return -1;  
         }
     }
 
-    //and if full then -1
-    return -1;
-}
+    //find free slot for new segment
+    for(i = 0; i < MAXSHM; i++) {
+        if(!shmtable.segments[i].used) {
+            shmtable.segments[i].used = 1;
+            shmtable.segments[i].key = key;
+            shmtable.segments[i].id = i;
+            shmtable.segments[i].size = size;
+            shmtable.segments[i].nattch = 0;
 
+            release(&shmtable.lock);  //release BEFORE slow allocation
+
+            //allocate physical pages
+            if(allocshm(size, shmtable.segments[i].pages) < 0) {
+                acquire(&shmtable.lock);
+                shmtable.segments[i].used = 0;
+                release(&shmtable.lock);
+                return -1;  
+            }
+
+            return i;
+        }
+    }
+
+    release(&shmtable.lock);
+    return -1;  
+}

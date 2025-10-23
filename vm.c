@@ -233,6 +233,8 @@ allocshm(uint size, char **pages)
 
   if(size==0||size>=KERNBASE) return -1;
 
+  if(npages>MAX_PAGES) return -1;
+
   for(i=0; i<npages; i++){
     mem=kalloc();
     if(mem==0){
