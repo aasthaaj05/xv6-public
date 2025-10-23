@@ -20,3 +20,17 @@ void shminit(void);
 int shmget(int key, int size);
 
 
+// IPC flags
+#define IPC_PRIVATE 0x00001111    //create private segment
+#define IPC_CREAT   0x00001000    //create if doesn't exist
+#define IPC_EXCL    0x00002000    //fail if exists
+
+struct shmseg{
+    int used;          // 1 if segment is in use helping in finding free slots
+    int key;           // user-provided key going ti be used for lookup
+    int id;            // segment id (maybe use of index can be done or else we can have global var where we increment it when allocating segment
+    int size;          // size of seg , req for calculation of pages
+    int nattch;        // number of processes attached will help us in detemining whther we want to free that segment or not
+    char *pages[MAX_PAGES]; // pointers to physical pages which has been done throught kalloc
+};
+
