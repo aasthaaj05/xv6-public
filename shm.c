@@ -7,22 +7,6 @@
 #include "spinlock.h"
 #include "shm.h"
 
-
-#define MAX_PAGES 16
-
-/*
-
-struct shmseg{
-    int used;          // 1 if segment is in use helping in finding free slots
-    int key;           // user-provided key going ti be used for lookup
-    int id;            // segment id (maybe use of index can be done or else we can have global var where we increment it when allocating segment
-    int size;          // size of seg , req for calculation of pages
-    int nattch;        // number of processes attached will help us in detemining whther we want to free that segment or not
-    char *pages[MAX_PAGES]; // pointers to physical pages which has been done throught kalloc
-};
-
-*/
-
 // global shared memory table with lock
 struct {
     struct spinlock lock;
@@ -36,7 +20,7 @@ shminit(void)
     initlock(&shmtable.lock, "shmtable");
     
     for(int i = 0; i < MAXSHM; i++){
-        shmtable.segments[i].used = 0;
+        shmtable.segments[i].state = SHM_FREE;
         shmtable.segments[i].key = 0;
         shmtable.segments[i].id = i;
         shmtable.segments[i].size = 0;
@@ -49,33 +33,36 @@ shminit(void)
 
 /*
 sys_shmget:
-1. acquire lock
-2. check if segment with given key exists
-3. if exists, return its id
-4. error if IPC_CREAT or IPC_EXCL flags are set and segment exists
-5. if size requested is less than SHMMIN or greater than SHMMAX, return error
-6. IPC_CREAT flag set, find a free slot in shmtable
-7. for non-existing segment, initialize its fields
-8. allocate physical pages for the segment. store pointers in pages array
-9. initilialize shared memory metadata
-10. release lock
-11. return segment id or error code
+1. Validate size (must be between SHMMIN and SHMMAX)
+2. Acquire lock and check if segment with given key already exists
+3. If exists:
+   - Return error if both IPC_CREAT and IPC_EXCL flags are set
+   - Otherwise return existing segment id
+4. If not exists and IPC_CREAT not set, return error
+5. Find free slot in shmtable and mark as SHM_ALLOCATING
+6. Release lock before allocating physical pages (slow operation)
+7. Call allocshm() to allocate physical pages
+8. On allocation failure, rollback by marking segment as SHM_FREE
+9. On success, copy page pointers to segment and mark as SHM_READY
+10. Return segment id
 */
 
 int
 shmget(int key, int size, int shmflg)
 {
-     int i;
-
+    int i;
+    char *temp_pages[MAX_PAGES];
+    
     if(size < SHMMIN || size > SHMMAX)
         return -1;
     
     acquire(&shmtable.lock);
-
-    //check for existing segment
+    
+    // Check for existing READY segment
     if(key != IPC_PRIVATE) {
         for(i = 0; i < MAXSHM; i++) {
-            if(shmtable.segments[i].used && shmtable.segments[i].key == key) {
+            if(shmtable.segments[i].state == SHM_READY && 
+               shmtable.segments[i].key == key) {
                 if((shmflg & IPC_CREAT) && (shmflg & IPC_EXCL)) {
                     release(&shmtable.lock);
                     return -1; 
@@ -86,36 +73,43 @@ shmget(int key, int size, int shmflg)
             }
         }
         
-        //segment not found, check if IPC_CREAT is set
         if(!(shmflg & IPC_CREAT)) {
             release(&shmtable.lock);
             return -1;  
         }
     }
-
-    //find free slot for new segment
+    
+    // Find free slot and mark as ALLOCATING
     for(i = 0; i < MAXSHM; i++) {
-        if(!shmtable.segments[i].used) {
-            shmtable.segments[i].used = 1;
+        if(shmtable.segments[i].state == SHM_FREE) {
+            shmtable.segments[i].state = SHM_ALLOCATING;
             shmtable.segments[i].key = key;
             shmtable.segments[i].id = i;
             shmtable.segments[i].size = size;
             shmtable.segments[i].nattch = 0;
-
-            release(&shmtable.lock);  //release BEFORE slow allocation
-
-            //allocate physical pages
-            if(allocshm(size, shmtable.segments[i].pages) < 0) {
+            
+            release(&shmtable.lock);
+            
+            // Allocate pages without lock
+            if(allocshm(size, temp_pages) < 0) {
                 acquire(&shmtable.lock);
-                shmtable.segments[i].used = 0;
+                shmtable.segments[i].state = SHM_FREE;
                 release(&shmtable.lock);
-                return -1;  
+                return -1;
             }
-
+            
+            // Copy pages and mark READY
+            acquire(&shmtable.lock);
+            for(int j = 0; j < MAX_PAGES; j++) {
+                shmtable.segments[i].pages[j] = temp_pages[j];
+            }
+            shmtable.segments[i].state = SHM_READY;
+            release(&shmtable.lock);
+            
             return i;
         }
     }
-
+    
     release(&shmtable.lock);
-    return -1;  
+    return -1;
 }

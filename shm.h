@@ -11,8 +11,13 @@
 #define IPC_CREAT   0x00001000    //create if doesn't exist
 #define IPC_EXCL    0x00002000    //fail if exists
 
+//states
+#define SHM_FREE        0
+#define SHM_ALLOCATING  1
+#define SHM_READY       2
+
 struct shmseg{
-    int used;          // 1 if segment is in use helping in finding free slots
+    int state;         
     int key;           // user-provided key going ti be used for lookup
     int id;            // segment id (maybe use of index can be done or else we can have global var where we increment it when allocating segment
     int size;          // size of seg , req for calculation of pages
