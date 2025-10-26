@@ -187,6 +187,9 @@ int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
 int             allocshm(uint, char**);
 int             deallocshm(char**, uint);
+int             mapshm(pde_t*, uint, char**, const char*, int);
+int             unmapshm(pde_t*, char*, char*);
+pte_t*          check_shmaddr(pde_t*, char*);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

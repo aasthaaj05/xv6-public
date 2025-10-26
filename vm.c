@@ -270,6 +270,94 @@ deallocshm(char **pages, uint size)
   return 0;
 }
 
+//check if address has valid mapping
+//bfore detaching (shmdt) to verify the address is actually mapped
+pte_t*
+check_shmaddr(pde_t* pgdir, char* shmaddr)
+{
+    pte_t* pte;
+    
+    pte=walkpgdir(pgdir, shmaddr, 0);  
+    if(pte==0) return 0; //no existence 
+    if(!(*pte & PTE_P))  //not present
+        return 0;
+    if(!(*pte & PTE_U))  //not user accessible
+        return 0;
+    
+    return pte;
+}
+
+/*
+1. map each physical page to virtual address in process's page table
+2. on failure, unmap any mapped pages and return -1
+*/
+int
+mapshm(pde_t* pgdir, uint size, char **pages, const char* uaddr, int perm)
+{
+    char *mem;
+    uint npages = PGROUNDUP(size)/PGSIZE;
+    uint i;
+
+    for(i=0; i<npages; i++){
+        char* va = (char*)(uaddr + i*PGSIZE);
+        mem = pages[i];
+        
+        if(mem == 0){
+            unmapshm(pgdir, (char*)uaddr, va);
+            return -1;
+        }
+        
+        if(mappages(pgdir, va, PGSIZE, V2P(mem), perm) < 0){
+            unmapshm(pgdir, (char*)uaddr, va);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/*
+1. clear all ptes
+2. free empty page tables
+*/
+int
+unmapshm(pde_t *pgdir, char* start, char* end)
+{
+    pte_t *pte;
+    pde_t *pde;
+    pte_t *pgtab;
+    char* a;
+    int i, empty;
+    
+    for(a = start; a < end; a += PGSIZE){
+        pte = walkpgdir(pgdir, a, 0);
+        if(pte && (*pte & PTE_P)){
+            *pte = 0;
+        }
+    }
+    
+    for(a = (char*)PGROUNDDOWN((uint)start); a < end; a += PGSIZE*1024){
+        pde = &pgdir[PDX(a)];
+        if(!(*pde & PTE_P))
+            continue;
+        
+        pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+        empty = 1;
+        
+        for(i=0; i<1024; i++){
+            if(pgtab[i] & PTE_P){
+                empty = 0;
+                break;
+            }
+        }
+        
+        if(empty){
+            kfree((char*)pgtab);
+            *pde = 0;
+        }
+    }
+    return 0;
+}
+
 // Allocate page tables and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 int
