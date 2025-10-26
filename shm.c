@@ -63,13 +63,9 @@ sys_shmget:
 */
 
 int
-sys_shmget(void)
+shmget(int key, int size, int shmflg)
 {
-    int key, size, shmflg;
-    int i;
-    
-    if(argint(0, &key)<0 || argint(1, &size)<0 || argint(2, &shmflg)<0)
-        return -1;
+     int i;
 
     if(size < SHMMIN || size > SHMMAX)
         return -1;

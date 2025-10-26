@@ -103,17 +103,13 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
-extern int sys_uptime(void);
 extern int sys_shmget(void);
 
 /*
->>>>>>> Stashed changes
 extern int sys_shmat(void);
 extern int sys_shmdt(void);
 extern int sys_shmctl(void);
 extern int sys_ipcs(void);
-<<<<<<< Updated upstream
-=======
 */
 
 static int (*syscalls[])(void) = {
@@ -142,13 +138,10 @@ static int (*syscalls[])(void) = {
 [SYS_shmget]  sys_shmget,
 
 /*
->>>>>>> Stashed changes
 [SYS_shmat]   sys_shmat,
 [SYS_shmdt]   sys_shmdt,
 [SYS_shmctl]  sys_shmctl,
 [SYS_ipcs]    sys_ipcs,
-<<<<<<< Updated upstream
-=======
 */
 
 };

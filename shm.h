@@ -6,20 +6,6 @@
 #define SHMSEG    MAXSHM          //max segments per process
 #define MAX_PAGES 16
 
-struct shmseg{
-    int used;
-    int key;
-    int id;
-    int size;
-    int nattch;
-    char *pages[MAX_PAGES];
-};
-
-extern struct shmseg shmtable[MAXSHM];
-void shminit(void);
-int shmget(int key, int size);
-
-
 // IPC flags
 #define IPC_PRIVATE 0x00001111    //create private segment
 #define IPC_CREAT   0x00001000    //create if doesn't exist
@@ -34,3 +20,6 @@ struct shmseg{
     char *pages[MAX_PAGES]; // pointers to physical pages which has been done throught kalloc
 };
 
+// function prototypes
+void shminit(void);
+int shmget(int key, int size, int shmflg);

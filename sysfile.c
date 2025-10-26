@@ -448,13 +448,15 @@ sys_pipe(void)
 int
 sys_shmget(void)
 {
-  int key, size;
+    int key, size, shmflg;
 
-  if (argint(0, &key) < 0)
-    return -1;
-  if (argint(1, &size) < 0)
-    return -1;
+    if(argint(0, &key) < 0)
+        return -1;
+    if(argint(1, &size) < 0)
+        return -1;
+    if(argint(2, &shmflg) < 0)
+        return -1;
 
-  return shmget(key, size);
+    return shmget(key, size, shmflg);  
 }
 
