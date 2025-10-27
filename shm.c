@@ -7,11 +7,33 @@
 #include "spinlock.h"
 #include "shm.h"
 
+
+
+#define MAX_PAGES 16
+
+/*
+
+struct shmseg{
+    int used;          // 1 if segment is in use helping in finding free slots
+    int key;           // user-provided key going ti be used for lookup
+    int id;            // segment id (maybe use of index can be done or else we can have global var where we increment it when allocating segment
+    int size;          // size of seg , req for calculation of pages
+    int nattch;        // number of processes attached will help us in detemining whther we want to free that segment or not
+    char *pages[MAX_PAGES]; // pointers to physical pages which has been done throught kalloc
+};
+
+*/
+
+struct shm_table shmtable;
+
+
 // global shared memory table with lock
-struct {
-    struct spinlock lock;
-    struct shmseg segments[MAXSHM];
-} shmtable;
+struct shm_table {
+  struct spinlock lock;
+  struct shmseg segments[MAXSHM];
+};
+
+
 
 
 void
@@ -47,18 +69,24 @@ sys_shmget:
 10. Return segment id
 */
 
+
 int
 shmget(int key, int size, int shmflg)
 {
     int i;
     char *temp_pages[MAX_PAGES];
     
+
     if(size < SHMMIN || size > SHMMAX)
         return -1;
     
     acquire(&shmtable.lock);
+
     
-    // Check for existing READY segment
+
+
+    // Check for existing segment
+
     if(key != IPC_PRIVATE) {
         for(i = 0; i < MAXSHM; i++) {
             if(shmtable.segments[i].state == SHM_READY && 
@@ -72,14 +100,13 @@ shmget(int key, int size, int shmflg)
                 return id;
             }
         }
-        
+
         if(!(shmflg & IPC_CREAT)) {
             release(&shmtable.lock);
             return -1;  
         }
     }
-    
-    // Find free slot and mark as ALLOCATING
+
     for(i = 0; i < MAXSHM; i++) {
         if(shmtable.segments[i].state == SHM_FREE) {
             shmtable.segments[i].state = SHM_ALLOCATING;
@@ -87,11 +114,16 @@ shmget(int key, int size, int shmflg)
             shmtable.segments[i].id = i;
             shmtable.segments[i].size = size;
             shmtable.segments[i].nattch = 0;
+
             
             release(&shmtable.lock);
             
             // Allocate pages without lock
             if(allocshm(size, temp_pages) < 0) {
+
+            release(&shmtable.lock);
+
+            
                 acquire(&shmtable.lock);
                 shmtable.segments[i].state = SHM_FREE;
                 release(&shmtable.lock);
@@ -111,5 +143,9 @@ shmget(int key, int size, int shmflg)
     }
     
     release(&shmtable.lock);
+
     return -1;
 }
+
+
+

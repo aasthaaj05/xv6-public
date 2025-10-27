@@ -1,9 +1,12 @@
 //KERNBASE-HEAPLIMIT=0x80000000 - 0x70000000 = 256 MB
 
+
+
 #define SHMMAX    (4*1024*1024)   //4 MB max segment size
 #define SHMMIN    1               //1 byte min segment size
 #define MAXSHM    64              //max 64 segments
 #define SHMSEG    MAXSHM          //max segments per process
+
 #define MAX_PAGES 16
 
 // IPC flags
@@ -11,10 +14,20 @@
 #define IPC_CREAT   0x00001000    //create if doesn't exist
 #define IPC_EXCL    0x00002000    //fail if exists
 
+
 //states
 #define SHM_FREE        0
 #define SHM_ALLOCATING  1
 #define SHM_READY       2
+
+
+
+
+int shmget(int key, int size, int shmflg);
+extern struct shm_table shmtable;
+void shminit(void);
+
+
 
 struct shmseg{
     int state;         
@@ -25,6 +38,3 @@ struct shmseg{
     char *pages[MAX_PAGES]; // pointers to physical pages which has been done throught kalloc
 };
 
-// function prototypes
-void shminit(void);
-int shmget(int key, int size, int shmflg);
