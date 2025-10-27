@@ -272,12 +272,12 @@ deallocshm(char **pages, uint size)
 
 //check if address has valid mapping
 //bfore detaching (shmdt) to verify the address is actually mapped
-pte_t*
+int*
 check_shmaddr(pde_t* pgdir, char* shmaddr)
 {
-    pte_t* pte;
+    int* pte;
     
-    pte=walkpgdir(pgdir, shmaddr, 0);  
+    pte=(int*)walkpgdir(pgdir, shmaddr, 0);  
     if(pte==0) return 0; //no existence 
     if(!(*pte & PTE_P))  //not present
         return 0;
