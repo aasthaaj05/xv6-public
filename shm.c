@@ -6,7 +6,7 @@
 #include "proc.h"
 #include "spinlock.h"
 #include "shm.h"
-
+#include "defs.h"
 
 
 #define MAX_PAGES 16
@@ -82,18 +82,18 @@ shmget(int key, int size, int shmflg)
     
     acquire(&shmtable.lock);
 
-    
+  
 
-
-    // Check for existing segment
-
-    if(key != IPC_PRIVATE) {
-        for(i = 0; i < MAXSHM; i++) {
+    if(key != IPC_PRIVATE){
+        for(i = 0; i < MAXSHM; i++)   {
             if(shmtable.segments[i].state == SHM_READY && 
-               shmtable.segments[i].key == key) {
+               shmtable.segments[i].key == key)  {
                 if((shmflg & IPC_CREAT) && (shmflg & IPC_EXCL)) {
                     release(&shmtable.lock);
                     return -1; 
+                    
+                    
+                    
                 }
                 int id = shmtable.segments[i].id;
                 release(&shmtable.lock);
@@ -117,8 +117,9 @@ shmget(int key, int size, int shmflg)
 
             
             release(&shmtable.lock);
-            
-            // Allocate pages without lock
+       
+       
+       
             if(allocshm(size, temp_pages) < 0) {
 
             release(&shmtable.lock);
@@ -147,5 +148,69 @@ shmget(int key, int size, int shmflg)
     return -1;
 }
 
+int
+shmat(int shmid, const void *shmaddr, int shmflag)
+{
+    struct shmseg *seg;
+    struct proc *curproc = myproc();
+    char *attach_addr = 0;
 
+   
+    if (shmid < 0 || shmid >= MAXSHM) {
+        return -1;
+	}
+   
+    acquire(&shmtable.lock); //lock for accessing table
+    seg = &shmtable.segments[shmid];
+
+  
+    if (seg->state != SHM_READY) {
+        release(&shmtable.lock);
+        return -1;
+        
+        
+    }
+	//int remap;
+	int perm;
+            
+	if (shmflag & SHM_RDONLY) {
+    perm = PTE_U;
+	} else {
+    perm = PTE_W | PTE_U;
+	}
+
+
+	/*if (shmflag & SHM_REMAP) {
+	    remap = 1;
+	} else {
+  	  remap = 0;
+	}*/
+   
+   
+   
+    release(&shmtable.lock);
+
+  
+    if (shmaddr == 0) {
+        attach_addr = findfree_vm_region(curproc->pgdir, seg->size);
+        if (attach_addr == 0)
+            return -1; 
+    } else {
+        attach_addr = (char *)PGROUNDDOWN((uint)shmaddr);
+    }
+
+   
+    if (mapshm(curproc->pgdir, seg->size, seg->pages, attach_addr, perm) < 0) {
+        return -1;
+        }
+
+  
+    acquire(&shmtable.lock);
+    seg->nattch++;
+    seg->lpid = curproc->pid;
+    release(&shmtable.lock);
+
+   
+    return (int)attach_addr;
+}
 

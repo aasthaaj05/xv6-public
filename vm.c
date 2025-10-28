@@ -287,28 +287,51 @@ check_shmaddr(pde_t* pgdir, char* shmaddr)
     return pte;
 }
 
+//checks the pages requires and then scans the adress spaces btw shmbase and shmlimit and returns the start address of the big block recieved
+
+char*
+findfree_vm_region(pde_t *pgdir, int size)
+{
+    uint npages = PGROUNDUP(size) / PGSIZE;
+    uint gap = npages * PGSIZE;
+
+    for (uint addr = SHMBASE; addr + gap < SHMLIMIT; addr += PGSIZE) {
+        int free = 1;
+        for (uint a = addr; a < addr + gap; a += PGSIZE) {
+            pte_t *pte = walkpgdir(pgdir, (char*)a, 0);
+            if (pte && (*pte & PTE_P)) {
+                free = 0;
+                break;
+            }
+        }
+        if (free)
+            return (char*)addr;
+    }
+    return 0;
+}
+
 /*
 1. map each physical page to virtual address in process's page table
 2. on failure, unmap any mapped pages and return -1
 */
 int
-mapshm(pde_t* pgdir, uint size, char **pages, const char* uaddr, int perm)
+mapshm(pde_t* pgdir, uint size, char **pages, const char* addr, int perm)
 {
     char *mem;
     uint npages = PGROUNDUP(size)/PGSIZE;
     uint i;
 
     for(i=0; i<npages; i++){
-        char* va = (char*)(uaddr + i*PGSIZE);
+        char* va = (char*)(addr + i*PGSIZE);
         mem = pages[i];
         
         if(mem == 0){
-            unmapshm(pgdir, (char*)uaddr, va);
+            unmapshm(pgdir, (char*)addr, va);
             return -1;
         }
         
         if(mappages(pgdir, va, PGSIZE, V2P(mem), perm) < 0){
-            unmapshm(pgdir, (char*)uaddr, va);
+            unmapshm(pgdir, (char*)addr, va);
             return -1;
         }
     }
@@ -366,7 +389,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   char *mem;
   uint a;
 
-  if(newsz >= HEAPLIMIT) //changed from kernbase
+  if(newsz >= HEAPLIMIT) //changed from mapkernbase
     return 0;
   if(newsz < oldsz)
     return oldsz;

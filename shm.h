@@ -13,6 +13,11 @@
 #define IPC_PRIVATE 0x00001111    //create private segment
 #define IPC_CREAT   0x00001000    //create if doesn't exist
 #define IPC_EXCL    0x00002000    //fail if exists
+#define SHM_RDONLY  0x00004000		//attach readonly
+#define SHM_REMAP   0x00008000		//attach remapping
+#define SHMBASE   0x70000000 		 // start of shared memory region
+#define SHMLIMIT  0x80000000 		 // end of shared memory region (just before KERNBASE)
+
 
 
 //states
@@ -26,6 +31,7 @@
 int shmget(int key, int size, int shmflg);
 extern struct shm_table shmtable;
 void shminit(void);
+int shmat(int shmid, const void *shmaddr, int shmflg);
 
 
 
@@ -34,7 +40,8 @@ struct shmseg{
     int key;           // user-provided key going ti be used for lookup
     int id;            // segment id (maybe use of index can be done or else we can have global var where we increment it when allocating segment
     int size;          // size of seg , req for calculation of pages
-    int nattch;        // number of processes attached will help us in detemining whther we want to free that segment or not
+    int nattch;       // number of processes attached will help us in detemining whther we want to free that segment or not
+    int lpid;     // last process that attached
     char *pages[MAX_PAGES]; // pointers to physical pages which has been done throught kalloc
 };
 

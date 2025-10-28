@@ -24,6 +24,8 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int shmget(int key, int size, int shmflg);
+int shmat(int shmid, const void *shmaddr, int shmflg);
+
 
 // ulib.c
 int stat(const char*, struct stat*);

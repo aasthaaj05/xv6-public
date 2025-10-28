@@ -15,6 +15,10 @@ main(int argc, char *argv[])
     // Basic creation
     id1 = shmget(10, 4096, IPC_CREAT);
     printf(1, "Test 1: shmget(10, 4096, IPC_CREAT):id=%d\n", id1);
+    
+    // Attach it to current process
+    char *shmaddr = (char*)shmat(id1, 0, 0);
+    printf(1, "shmat(shmid): addr=%x\n", shmaddr);
 
     //Same key should return same id (no new allocation)
     id2 = shmget(10, 4096, IPC_CREAT);
