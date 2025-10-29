@@ -251,9 +251,9 @@ shmdt(const void *shmaddr)
 }
 
 /*
-  IPC_STAT  - Copy segment info into buf
-  IPC_RMID  - Mark segment for deletion (actual deletion when nattch=0)
-  IPC_INFO  - Get system limits
+IPC_STAT-copy segment info into buf
+IPC_RMID-mark segment for deletion (actually del when nattch=0)
+IPC_INFO-get system limits
 */
 int
 shmctl(int shmid, int cmd, struct shmid_ds *buf)
@@ -284,8 +284,8 @@ shmctl(int shmid, int cmd, struct shmid_ds *buf)
             return 0;
             
         case IPC_RMID:
-            //mark segment for removal
-            //if no processes attached, free immediately
+            //mark segmt for removal
+            //if no processes attached, free 
             //else, free when last process detaches
             if(seg->nattch == 0) {
                 deallocshm(seg->pages, seg->size);

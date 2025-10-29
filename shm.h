@@ -5,10 +5,13 @@
 #define MAXSHM    64              //max 64 segments
 #define SHMSEG    MAXSHM          //max segments per process
 
+#define SHMBASE   0x70000000        // start of shared memory region
+#define SHMLIMIT  0x80000000        // end of shared memory region (KERNBASE)
+
 #define MAX_PAGES 16
 
 // IPC flags
-#define IPC_PRIVATE 0x00001111    //create private segment
+#define IPC_PRIVATE 0x00001111    //create pvt segment
 #define IPC_CREAT   0x00001000    //create if doesn't exist
 #define IPC_EXCL    0x00002000    //fail if exists
 
@@ -17,25 +20,25 @@
 #define SHM_REMAP   0x00008000		//attach remapping
 
 // shmctl commands
-#define IPC_STAT    0x00010000    //get segment info
-#define IPC_SET     0x00020000    //set segment info
-#define IPC_RMID    0x00040000    //remove segment
+#define IPC_STAT    0x00010000    //get seg info
+#define IPC_SET     0x00020000    //set seg info
+#define IPC_RMID    0x00040000    //remove seg
 #define IPC_INFO    0x00080000    //get system limits
 
 //for IPC_STAT
 struct shmid_ds {
-    int shm_segsz;      // size of segment in bytes
-    int shm_nattch;     // number of current attaches
-    int shm_lpid;       // pid of last shmat/shmdt
-    int shm_cpid;       // pid of creator
+    int shm_segsz;      //size
+    int shm_nattch;     //n. of current attaches
+    int shm_lpid;       //pid of last shmat/shmdt
+    int shm_cpid;       //pid of creator
 };
 
 //for IPC_INFO
 struct shminfo {
-    int shmmax;         // max segment size
-    int shmmin;         // min segment size
-    int shmmni;         // max number of segments
-    int shmseg;         // max segments per process
+    int shmmax;         
+    int shmmin;         
+    int shmmni;         
+    int shmseg;        
 };
 
 //states
@@ -54,7 +57,7 @@ int shmctl(int shmid, int cmd, struct shmid_ds *buf);
 
 struct shmseg{
     int state;         
-    int key;           // user-provided key going ti be used for lookup
+    int key;           // user provided key going ti be used for lookup
     int id;            // segment id (maybe use of index can be done or else we can have global var where we increment it when allocating segment
     int size;          // size of seg , req for calculation of pages
     int nattch;       // number of processes attached will help us in detemining whther we want to free that segment or not
