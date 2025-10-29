@@ -28,6 +28,7 @@ shminit(void)
         shmtable.segments[i].size = 0;
         shmtable.segments[i].nattch = 0;
         shmtable.segments[i].lpid = 0;
+        shmtable.segments[i].cpid = 0; 
         for(int j = 0; j < MAX_PAGES; j++){
             shmtable.segments[i].pages[j] = 0;
         }
@@ -57,13 +58,10 @@ shmget(int key, int size, int shmflg)
     int i;
     char *temp_pages[MAX_PAGES];
     
-
     if(size < SHMMIN || size > SHMMAX)
         return -1;
     
     acquire(&shmtable.lock);
-
-  
 
     if(key != IPC_PRIVATE){
         for(i = 0; i < MAXSHM; i++)   {
@@ -72,9 +70,6 @@ shmget(int key, int size, int shmflg)
                 if((shmflg & IPC_CREAT) && (shmflg & IPC_EXCL)) {
                     release(&shmtable.lock);
                     return -1; 
-                    
-                    
-                    
                 }
                 int id = shmtable.segments[i].id;
                 release(&shmtable.lock);
@@ -95,7 +90,7 @@ shmget(int key, int size, int shmflg)
             shmtable.segments[i].id = i;
             shmtable.segments[i].size = size;
             shmtable.segments[i].nattch = 0;
-
+            shmtable.segments[i].cpid = myproc()->pid;
             
             release(&shmtable.lock);
        
@@ -211,7 +206,7 @@ shmdt(const void *shmaddr)
     acquire(&shmtable.lock);
     
     for(i = 0; i < MAXSHM; i++) {
-        if(shmtable.segments[i].state == SHM_READY) {
+        if(shmtable.segments[i].state == SHM_READY || shmtable.segments[i].state == SHM_DELETED) {
             seg = &shmtable.segments[i];
             
             pte_t *pte = walkpgdir(curproc->pgdir, addr, 0);
@@ -238,6 +233,13 @@ shmdt(const void *shmaddr)
         seg->nattch--;
     }
     seg->lpid = curproc->pid;
+
+    if(seg->state == SHM_DELETED && seg->nattch == 0) {
+        deallocshm(seg->pages, seg->size);
+        seg->state = SHM_FREE;
+        seg->key = 0;
+        seg->size = 0;
+    }
     
     release(&shmtable.lock);
     
@@ -246,4 +248,68 @@ shmdt(const void *shmaddr)
     if(unmapshm(curproc->pgdir, addr, end) < 0) return -1;
     
     return 0;
+}
+
+/*
+  IPC_STAT  - Copy segment info into buf
+  IPC_RMID  - Mark segment for deletion (actual deletion when nattch=0)
+  IPC_INFO  - Get system limits
+*/
+int
+shmctl(int shmid, int cmd, struct shmid_ds *buf)
+{
+    struct shmseg *seg;
+    
+    if(shmid < 0 || shmid >= MAXSHM) return -1;
+    
+    acquire(&shmtable.lock);
+    seg = &shmtable.segments[shmid];
+    
+    if(seg->state != SHM_READY && seg->state != SHM_DELETED) {
+        release(&shmtable.lock);
+        return -1;
+    }
+    
+    switch(cmd) {
+        case IPC_STAT:
+            if(buf == 0) {
+                release(&shmtable.lock);
+                return -1;
+            }
+            buf->shm_segsz = seg->size;
+            buf->shm_nattch = seg->nattch;
+            buf->shm_lpid = seg->lpid;
+            buf->shm_cpid = seg->cpid;
+            release(&shmtable.lock);
+            return 0;
+            
+        case IPC_RMID:
+            //mark segment for removal
+            //if no processes attached, free immediately
+            //else, free when last process detaches
+            if(seg->nattch == 0) {
+                deallocshm(seg->pages, seg->size);
+                seg->state = SHM_FREE;
+                seg->key = 0;
+                seg->size = 0;
+                release(&shmtable.lock);
+            } else {
+                seg->state = SHM_DELETED;
+                release(&shmtable.lock);
+            }
+            return 0;
+            
+        case IPC_INFO:
+            release(&shmtable.lock);
+            if(buf == 0) return -1;
+            buf->shm_segsz = SHMMAX;
+            buf->shm_nattch = SHMMIN;
+            buf->shm_lpid = MAXSHM;
+            buf->shm_cpid = SHMSEG;
+            return 0;
+            
+        default:
+            release(&shmtable.lock);
+            return -1;
+    }
 }

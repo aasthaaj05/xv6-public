@@ -492,3 +492,19 @@ sys_shmdt(void)
     
     return shmdt(shmaddr);
 }
+
+int
+sys_shmctl(void)
+{
+    int shmid, cmd;
+    struct shmid_ds *buf;
+    
+    if(argint(0, &shmid) < 0)
+        return -1;
+    if(argint(1, &cmd) < 0)
+        return -1;
+    if(argptr(2, (char**)&buf, sizeof(struct shmid_ds)) < 0)
+        return -1;
+    
+    return shmctl(shmid, cmd, buf);
+}
