@@ -25,6 +25,7 @@ int sleep(int);
 int uptime(void);
 int shmget(int key, int size, int shmflg);
 int shmat(int shmid, const void *shmaddr, int shmflg);
+int shmdt(const void *shmaddr);
 
 
 // ulib.c

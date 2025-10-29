@@ -3,59 +3,80 @@
 #include "user.h"
 #include "shm.h"
 
-
-#define SHMMIN 1
 int
 main(int argc, char *argv[])
 {
-    int id1, id2, id3, id4, id5, id6;
+    int id1, id2, id3;
+    char *addr1, *addr2;
     int i;
 
-
-    // Basic creation
-    id1 = shmget(10, 4096, IPC_CREAT);
-    printf(1, "Test 1: shmget(10, 4096, IPC_CREAT):id=%d\n", id1);
+    // basic shmget test
+    id1 = shmget(42, 4096, IPC_CREAT);
+    printf(1, "shmget(42, 4096): %d\n", id1);
     
-    // Attach it to current process
-    char *shmaddr = (char*)shmat(id1, 0, 0);
-    printf(1, "shmat(shmid): addr=%x\n", shmaddr);
-
-    //Same key should return same id (no new allocation)
-    id2 = shmget(10, 4096, IPC_CREAT);
-    printf(1, "Test 2: shmget(10, 4096, IPC_CREAT) again:id=%d\n", id2);
-
-    //Existing key + IPC_EXCL should fail
-    id3 = shmget(10, 4096, IPC_CREAT | IPC_EXCL);
-    printf(1, "Test 3: shmget(10, 4096, IPC_CREAT|IPC_EXCL):id=%d\n", id3);
-
-    //Create new key
-    id4 = shmget(20, 8192, IPC_CREAT);
-    printf(1, "Test 4: shmget(20, 8192, IPC_CREAT):id=%d\n", id4);
-
-    //IPC_PRIVATE (unique segment)
-    id5 = shmget(IPC_PRIVATE, 4096, IPC_CREAT);
-    printf(1, "Test 5: shmget(IPC_PRIVATE, 4096, IPC_CREAT):id=%d\n", id5);
-
-    //Invalid size tests
-    id6 = shmget(30, 0, IPC_CREAT);
-    printf(1, "Test 6a: shmget(30, 0, IPC_CREAT):id=%d\n", id6);
-    id6 = shmget(31, SHMMAX * 2, IPC_CREAT);
-    printf(1, "Test 6b: shmget(31, SHMMAX*2, IPC_CREAT):id=%d\n", id6);
+    // attach it
+    addr1 = (char*)shmat(id1, 0, 0);
+    printf(1, "shmat: %x\n", addr1);
     
-    int overflow = shmget(999, 4096, IPC_CREAT);
-    printf(1, "shmget(key=999) after table full :id=%d\n", overflow);
+    // write something
+    addr1[0] = 'A';
+    addr1[1] = 'B';
+    addr1[2] = 'C';
+    addr1[3] = 0;
+    printf(1, "wrote: %s\n", addr1);
 
-    //Fill table completely
-    printf(1, "\nTest 7: Filling shm table completely...\n");
-    for (i = 0; i < 65; i++) {
-        int ret = shmget(100 + i, 4096, IPC_CREAT);
-        printf(1, "  shmget(100+%d):id=%d\n", i, ret);
+    // same key returns same id
+    id2 = shmget(42, 4096, 0);
+    printf(1, "shmget same key: %d\n", id2);
+
+    // attach again
+    addr2 = (char*)shmat(id1, 0, 0);
+    printf(1, "shmat again: %x, data=%s\n", addr2, addr2);
+
+    // detach first one
+    if(shmdt(addr1) == 0)
+        printf(1, "shmdt ok\n");
+
+    // detach second
+    shmdt(addr2);
+
+    // IPC_EXCL should fail now... wait no, already exists
+    id3 = shmget(42, 4096, IPC_CREAT | IPC_EXCL);
+    printf(1, "IPC_EXCL on existing: %d\n", id3);
+
+    // new segment
+    int id_new = shmget(99, 8192, IPC_CREAT);
+    printf(1, "new segment: %d\n", id_new);
+
+    // IPC_PRIVATE
+    int priv1 = shmget(IPC_PRIVATE, 4096, IPC_CREAT);
+    int priv2 = shmget(IPC_PRIVATE, 4096, IPC_CREAT);
+    printf(1, "private segs: %d, %d\n", priv1, priv2);
+
+    // bad sizes
+    printf(1, "zero size: %d\n", shmget(50, 0, IPC_CREAT));
+    printf(1, "huge size: %d\n", shmget(51, 10*1024*1024, IPC_CREAT));
+
+    // bad detach
+    if(shmdt((void*)0x999999) < 0)
+        printf(1, "bad detach failed correctly\n");
+
+    // readonly attach
+    int ro_id = shmget(123, 4096, IPC_CREAT);
+    char *ro_addr = (char*)shmat(ro_id, 0, SHM_RDONLY);
+    printf(1, "readonly attach: %x\n", ro_addr);
+    shmdt(ro_addr);
+
+    // fill up the table
+    printf(1, "filling table...\n");
+    for(i = 0; i < 70; i++) {
+        int x = shmget(200+i, 4096, IPC_CREAT);
+        if(x < 0) {
+            printf(1, "table full at %d segments\n", i);
+            break;
+        }
     }
 
-    //Try one more beyond limit
-    int overflow1 = shmget(200, 4096, IPC_CREAT);
-    printf(1, "Test 8: shmget(200, 4096, IPC_CREAT) after full table:id=%d\n", overflow1);
-
+    printf(1, "done\n");
     exit();
 }
-

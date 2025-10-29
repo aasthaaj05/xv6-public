@@ -481,3 +481,14 @@ sys_shmat(void)
 
     return shmat(shmid, shmaddr, shmflg);
 }
+
+int
+sys_shmdt(void)
+{
+    char *shmaddr;
+    
+    if(argptr(0, &shmaddr, sizeof(char*)) < 0)
+        return -1;
+    
+    return shmdt(shmaddr);
+}

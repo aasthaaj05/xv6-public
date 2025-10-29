@@ -6,26 +6,6 @@
 #include "proc.h"
 #include "spinlock.h"
 #include "shm.h"
-#include "defs.h"
-
-
-#define MAX_PAGES 16
-
-/*
-
-struct shmseg{
-    int used;          // 1 if segment is in use helping in finding free slots
-    int key;           // user-provided key going ti be used for lookup
-    int id;            // segment id (maybe use of index can be done or else we can have global var where we increment it when allocating segment
-    int size;          // size of seg , req for calculation of pages
-    int nattch;        // number of processes attached will help us in detemining whther we want to free that segment or not
-    char *pages[MAX_PAGES]; // pointers to physical pages which has been done throught kalloc
-};
-
-*/
-
-struct shm_table shmtable;
-
 
 // global shared memory table with lock
 struct shm_table {
@@ -34,7 +14,7 @@ struct shm_table {
 };
 
 
-
+struct shm_table shmtable;
 
 void
 shminit(void)
@@ -47,6 +27,7 @@ shminit(void)
         shmtable.segments[i].id = i;
         shmtable.segments[i].size = 0;
         shmtable.segments[i].nattch = 0;
+        shmtable.segments[i].lpid = 0;
         for(int j = 0; j < MAX_PAGES; j++){
             shmtable.segments[i].pages[j] = 0;
         }
@@ -118,13 +99,7 @@ shmget(int key, int size, int shmflg)
             
             release(&shmtable.lock);
        
-       
-       
             if(allocshm(size, temp_pages) < 0) {
-
-            release(&shmtable.lock);
-
-            
                 acquire(&shmtable.lock);
                 shmtable.segments[i].state = SHM_FREE;
                 release(&shmtable.lock);
@@ -155,7 +130,6 @@ shmat(int shmid, const void *shmaddr, int shmflag)
     struct proc *curproc = myproc();
     char *attach_addr = 0;
 
-   
     if (shmid < 0 || shmid >= MAXSHM) {
         return -1;
 	}
@@ -167,8 +141,6 @@ shmat(int shmid, const void *shmaddr, int shmflag)
     if (seg->state != SHM_READY) {
         release(&shmtable.lock);
         return -1;
-        
-        
     }
 	//int remap;
 	int perm;
@@ -185,12 +157,9 @@ shmat(int shmid, const void *shmaddr, int shmflag)
 	} else {
   	  remap = 0;
 	}*/
-   
-   
-   
+      
     release(&shmtable.lock);
 
-  
     if (shmaddr == 0) {
         attach_addr = findfree_vm_region(curproc->pgdir, seg->size);
         if (attach_addr == 0)
@@ -214,3 +183,67 @@ shmat(int shmid, const void *shmaddr, int shmflag)
     return (int)attach_addr;
 }
 
+/*
+1. Validate that shmaddr is page-aligned
+2. Use check_shmaddr to verify the address is mapped
+3. Find which segment this address belongs to by checking all segments
+4. Unmap the pages from the process's address space
+5. Decrement nattch counter
+6. Update lpid to current process
+*/
+int
+shmdt(const void *shmaddr)
+{
+    struct proc *curproc = myproc();
+    char *addr = (char *)shmaddr;
+    struct shmseg *seg = 0;
+    int i;
+    
+    //if address is page-aligned
+    if((uint)addr % PGSIZE != 0) 
+        return -1;
+    
+    //address is actually mapped
+    if(check_shmaddr(curproc->pgdir, addr) == 0) 
+        return -1;
+    
+    //find segment 
+    acquire(&shmtable.lock);
+    
+    for(i = 0; i < MAXSHM; i++) {
+        if(shmtable.segments[i].state == SHM_READY) {
+            seg = &shmtable.segments[i];
+            
+            pte_t *pte = walkpgdir(curproc->pgdir, addr, 0);
+            if(pte && (*pte & PTE_P)) {
+                char *pa = (char*)P2V(PTE_ADDR(*pte));
+                if(pa == seg->pages[0]) {
+                    break;
+                }
+            }
+        }
+        seg = 0;
+    }
+    
+    if(seg == 0) {
+        release(&shmtable.lock);
+        return -1;
+    }
+    
+    //segment info before unmapping
+    uint seg_size = seg->size;
+    
+    //--attachment count
+    if(seg->nattch > 0) {
+        seg->nattch--;
+    }
+    seg->lpid = curproc->pid;
+    
+    release(&shmtable.lock);
+    
+    //unmap the shm region
+    char *end = addr + PGROUNDUP(seg_size);
+    if(unmapshm(curproc->pgdir, addr, end) < 0) return -1;
+    
+    return 0;
+}
