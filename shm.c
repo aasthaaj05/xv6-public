@@ -6,6 +6,8 @@
 #include "proc.h"
 #include "spinlock.h"
 #include "shm.h"
+#include "defs.h"
+
 
 // global shared memory table with lock
 struct shm_table {
@@ -192,63 +194,78 @@ shmdt(const void *shmaddr)
     struct proc *curproc = myproc();
     char *addr = (char *)shmaddr;
     struct shmseg *seg = 0;
-    int i;
+    int i, j;
+
     
-    //if address is page-aligned
-    if((uint)addr % PGSIZE != 0) 
+    if ((uint)addr % PGSIZE != 0)
         return -1;
-    
-    //address is actually mapped
-    if(check_shmaddr(curproc->pgdir, addr) == 0) 
+
+ 
+    if (check_shmaddr(curproc->pgdir, addr) == 0)
         return -1;
-    
-    //find segment 
+
     acquire(&shmtable.lock);
-    
-    for(i = 0; i < MAXSHM; i++) {
-        if(shmtable.segments[i].state == SHM_READY || shmtable.segments[i].state == SHM_DELETED) {
-            seg = &shmtable.segments[i];
-            
-            pte_t *pte = walkpgdir(curproc->pgdir, addr, 0);
-            if(pte && (*pte & PTE_P)) {
-                char *pa = (char*)P2V(PTE_ADDR(*pte));
-                if(pa == seg->pages[0]) {
-                    break;
-                }
-            }
+
+    for (i = 0; i < MAXSHM; i++) {
+        if (shmtable.segments[i].state == SHM_READY || 
+            shmtable.segments[i].state == SHM_DELETED) {
+
+            struct shmseg *s = &shmtable.segments[i];
+           
+
+          
+          
+          
+        for (j = 0; j < MAX_PAGES; j++) {
+           if (s->pages[j] == 0)
+                break;
+              pte_t *pte = walkpgdir(curproc->pgdir, addr, 0);
+               if (pte && (*pte & PTE_P)) {
+                    char *pa = (char*)P2V(PTE_ADDR(*pte));
+                    if (pa == s->pages[j]) {
+                        seg = s;
+                        break;
+                       }
+                      }
+                     }
+
+            if (seg)  
+                break;
         }
-        seg = 0;
     }
-    
-    if(seg == 0) {
+
+    if (!seg) {
         release(&shmtable.lock);
         return -1;
-    }
-    
-    //segment info before unmapping
-    uint seg_size = seg->size;
-    
-    //--attachment count
-    if(seg->nattch > 0) {
+        }
+
+ 
+    if (seg->nattch > 0)
         seg->nattch--;
-    }
     seg->lpid = curproc->pid;
 
-    if(seg->state == SHM_DELETED && seg->nattch == 0) {
+    
+    if (seg->state == SHM_DELETED && seg->nattch == 0) {
         deallocshm(seg->pages, seg->size);
         seg->state = SHM_FREE;
         seg->key = 0;
         seg->size = 0;
-    }
-    
+        }
+
     release(&shmtable.lock);
+
     
-    //unmap the shm region
-    char *end = addr + PGROUNDUP(seg_size);
-    if(unmapshm(curproc->pgdir, addr, end) < 0) return -1;
-    
+    char *end = addr + PGROUNDUP(seg->size);
+    if (unmapshm(curproc->pgdir, addr, end) < 0)
+        return -1;
+
     return 0;
 }
+
+/*
+chnage hadling od detached segments, removed prev assump that per process tracking of addreses instead now the gdt is searched to search for addr,and doesnt rely on struct proc , we can implement the struc proc idea by adding fields to it but rn we have decided against it,another added part is if last process gets attached then , free all associated physical pages
+
+*/
 
 /*
 IPC_STAT-copy segment info into buf

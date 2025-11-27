@@ -192,6 +192,7 @@ int		        mapshm(pde_t* pgdir, uint size, char **pages, const char* addr, int
 int             unmapshm(pde_t*, char*, char*);
 int*            check_shmaddr(pde_t*, char*);
 char*		    findfree_vm_region(pde_t *pgdir, int size);
+pde_t* 		walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
