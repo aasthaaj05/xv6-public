@@ -183,6 +183,9 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_shm_test\
+	_ipcs\
+    _ipcrm\
+    _ipcmk\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

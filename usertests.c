@@ -7,6 +7,7 @@
 #include "syscall.h"
 #include "traps.h"
 #include "memlayout.h"
+#include "shm.h"
 
 char buf[8192];
 char name[3];
@@ -1745,6 +1746,223 @@ rand()
   return randstate;
 }
 
+// Test 1: Just the basics - create, attach, write, detach
+void shmtest1(void)
+{
+    int id;
+    char *addr;
+    
+    printf(1, "shmtest1: basic create/attach/detach\n");
+    
+    id = shmget(100, 4096, IPC_CREAT);
+    if(id < 0) {
+        printf(1, "shmtest1: shmget failed\n");
+        exit();
+    }
+    
+    addr = (char*)shmat(id, 0, 0);
+    if((int)addr == -1) {
+        printf(1, "shmtest1: shmat failed\n");
+        exit();
+    }
+    
+    // Try writing and reading
+    strcpy(addr, "hello shared memory");
+    printf(1, "shmtest1: wrote '%s'\n", addr);
+    
+    if(shmdt(addr) < 0) {
+        printf(1, "shmtest1: shmdt failed\n");
+        exit();
+    }
+    
+    if(shmctl(id, IPC_RMID, 0) < 0) {
+        printf(1, "shmtest1: cleanup failed\n");
+        exit();
+    }
+    
+    printf(1, "shmtest1: ok\n");
+}
+
+// Test 2: The cool part - parent and child sharing memory
+void shmtest2(void)
+{
+    int id, pid;
+    char *addr;
+    
+    printf(1, "shmtest2: parent-child communication\n");
+    
+    id = shmget(200, 4096, IPC_CREAT);
+    addr = (char*)shmat(id, 0, 0);
+    
+    strcpy(addr, "from parent");
+    
+    pid = fork();
+    if(pid == 0) {
+        char *child_addr = (char*)shmat(id, 0, 0);
+        printf(1, "child sees: '%s'\n", child_addr);
+        strcpy(child_addr, "from child");
+        shmdt(child_addr);
+        exit();
+    }
+    
+    wait();
+    printf(1, "parent now sees: '%s'\n", addr);
+    
+    if(strcmp(addr, "from child") != 0) {
+        printf(1, "shmtest2: data didn't transfer!\n");
+        exit();
+    }
+    
+    shmdt(addr);
+    shmctl(id, IPC_RMID, 0);
+    printf(1, "shmtest2: ok\n");
+}
+
+// Test 3: Attaching the same segment multiple times
+void shmtest3(void)
+{
+    int id;
+    char *addr1, *addr2;
+    struct shmid_ds buf;
+    
+    printf(1, "shmtest3: multiple attachments\n");
+    
+    id = shmget(300, 4096, IPC_CREAT);
+    addr1 = (char*)shmat(id, 0, 0);
+    addr2 = (char*)shmat(id, 0, 0);
+    
+    shmctl(id, IPC_STAT, &buf);
+    if(buf.shm_nattch != 2) {
+        printf(1, "shmtest3: expected nattch=2, got %d\n", buf.shm_nattch);
+        exit();
+    }
+    
+    strcpy(addr1, "testing");
+    if(strcmp(addr2, "testing") != 0) {
+        printf(1, "shmtest3: addresses don't share memory\n");
+        exit();
+    }
+    
+    shmdt(addr1);
+    shmdt(addr2);
+    shmctl(id, IPC_RMID, 0);
+    printf(1, "shmtest3: ok\n");
+}
+
+// Test 4: Read-only attachments
+void shmtest4(void)
+{
+    int id;
+    char *addr_rw, *addr_ro;
+    
+    printf(1, "shmtest4: read-only attachment\n");
+    
+    id = shmget(400, 4096, IPC_CREAT);
+    addr_rw = (char*)shmat(id, 0, 0);
+    strcpy(addr_rw, "readonly test");
+    
+    addr_ro = (char*)shmat(id, 0, SHM_RDONLY);
+    printf(1, "reading from RO addr: '%s'\n", addr_ro);
+    
+    // Note: writing to addr_ro should cause a page fault, but that's
+    // hard to test cleanly in xv6 without proper signal handling
+    
+    shmdt(addr_rw);
+    shmdt(addr_ro);
+    shmctl(id, IPC_RMID, 0);
+    printf(1, "shmtest4: ok\n");
+}
+
+// Test 5: Marking for deletion while still attached
+void shmtest5(void)
+{
+    int id;
+    char *addr;
+    
+    printf(1, "shmtest5: deferred deletion\n");
+    
+    id = shmget(500, 4096, IPC_CREAT);
+    addr = (char*)shmat(id, 0, 0);
+    
+    // Call IPC_RMID while still attached - should mark for deletion
+    // but not actually delete yet
+    shmctl(id, IPC_RMID, 0);
+    
+    strcpy(addr, "still accessible");
+    printf(1, "after IPC_RMID: '%s'\n", addr);
+    
+    shmdt(addr);
+    
+    printf(1, "shmtest5: ok\n");
+}
+
+// Test 6: IPC_PRIVATE should give unique segments each time
+void shmtest6(void)
+{
+    int id1, id2;
+    
+    printf(1, "shmtest6: IPC_PRIVATE behavior\n");
+    
+    id1 = shmget(IPC_PRIVATE, 4096, IPC_CREAT);
+    id2 = shmget(IPC_PRIVATE, 4096, IPC_CREAT);
+    
+    if(id1 == id2) {
+        printf(1, "shmtest6: IPC_PRIVATE gave same ID twice!\n");
+        exit();
+    }
+    
+    shmctl(id1, IPC_RMID, 0);
+    shmctl(id2, IPC_RMID, 0);
+    printf(1, "shmtest6: ok\n");
+}
+
+// Test 7: Error conditions
+void shmtest7(void)
+{
+    int id;
+    
+    printf(1, "shmtest7: error handling\n");
+    
+    // Size of 0 should fail
+    if(shmget(700, 0, IPC_CREAT) >= 0) {
+        printf(1, "shmtest7: shouldn't accept size=0\n");
+        exit();
+    }
+    
+    // Size too large should fail
+    if(shmget(701, 10*1024*1024, IPC_CREAT) >= 0) {
+        printf(1, "shmtest7: shouldn't accept huge size\n");
+        exit();
+    }
+    
+    // IPC_EXCL should fail if segment exists
+    id = shmget(702, 4096, IPC_CREAT);
+    if(shmget(702, 4096, IPC_CREAT | IPC_EXCL) >= 0) {
+        printf(1, "shmtest7: IPC_EXCL should've failed\n");
+        exit();
+    }
+    shmctl(id, IPC_RMID, 0);
+    
+    // Can't detach a bogus address
+    if(shmdt((void*)0x999999) >= 0) {
+        printf(1, "shmtest7: shouldn't detach invalid address\n");
+        exit();
+    }
+    
+    printf(1, "shmtest7: ok\n");
+}
+
+// Helper to run each test in its own process
+void runtest(void (*test)(void), char *name)
+{
+    int pid = fork();
+    if(pid == 0) {
+        test();
+        exit();
+    }
+    wait();
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1795,6 +2013,16 @@ main(int argc, char *argv[])
   forktest();
   bigdir(); // slow
 
+
+  printf(1, "shared memory tests starting\n");
+  runtest(shmtest1, "shmtest1");
+  runtest(shmtest2, "shmtest2");
+  runtest(shmtest3, "shmtest3");
+  runtest(shmtest4, "shmtest4");
+  runtest(shmtest5, "shmtest5");
+  runtest(shmtest6, "shmtest6");
+  runtest(shmtest7, "shmtest7");
+  printf(1, "shared memory tests done\n");
   uio();
 
   exectest();
